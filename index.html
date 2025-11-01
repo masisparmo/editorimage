@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor & Kreator AI v8 (Generator)</title>
+    <!-- Memuat Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MEMUAT IMGLY BACKGROUND REMOVAL -->
+    <script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal/dist/browser.js"></script>
+    
+    <style>
+        /* Menggunakan font Inter */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Styling untuk input file kustom */
+        input[type="file"]::file-selector-button {
+            background-color: #3b82f6;
+            color: white;
+            border: 0;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background-color: #2563eb;
+        }
+        
+        /* Loading Spinner */
+        #loadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9998;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #loadingOverlay.show {
+            visibility: visible;
+            opacity: 1;
+        }
+        .spinner {
+            width: 56px;
+            height: 56px;
+            border: 6px solid #4f46e5;
+            border-color: #4f46e5 transparent #4f46e5 transparent;
+            border-radius: 50%;
+            animation: spin 1.2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom Message Box */
+        #messageBox {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, top 0.3s;
+        }
+        #messageBox.show {
+            opacity: 1;
+            visibility: visible;
+            top: 40px;
+        }
+        #messageBox.success {
+            background-color: #10b981; /* green-500 */
+        }
+        #messageBox.error {
+            background-color: #ef4444; /* red-500 */
+        }
+        
+        /* Wrapper untuk preview image dan mask canvas */
+        #previewWrapper {
+            position: relative;
+            background-image: 
+                linear-gradient(45deg, #808080 25%, transparent 25%), 
+                linear-gradient(-45deg, #808080 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #808080 75%), 
+                linear-gradient(-45deg, transparent 75%, #808080 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            border-radius: 0.375rem; /* rounded-md */
+            overflow: hidden;
+            line-height: 0; /* Mencegah spasi ekstra di bawah gambar */
+        }
+
+        /* Canvas untuk menggambar mask */
+        #maskCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            display: none; /* Sembunyi secara default */
+            touch-action: none; /* Mencegah scrolling saat menggambar di mobile */
+        }
+
+        /* Pastikan gambar preview mengisi wrapper */
+        #editedPreview {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Styling untuk Tab Utama */
+        .main-tab-button {
+            transition: all 0.2s;
+        }
+        .main-tab-button.active {
+            border-color: #4f46e5; /* indigo-600 */
+            background-color: #374151; /* gray-700 */
+            color: #ffffff; /* white */
+        }
+        .main-tab-button.inactive {
+            border-color: transparent;
+            background-color: #4B5563; /* gray-600 */
+            color: #D1D5DB; /* gray-300 */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 md:p-8">
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Message Box -->
+    <div id="messageBox">Pesan</div>
+
+    <div class="container mx-auto max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Suite Kreatif AI v8</h1>
+        </header>
+
+        <!-- TAB UTAMA: EDIT vs BUAT -->
+        <div class="flex justify-center space-x-4 mb-8">
+            <button id="mainTabEdit" class="main-tab-button active text-lg font-semibold py-3 px-8 rounded-lg border-b-4">
+                Edit Gambar
+            </button>
+            <button id="mainTabGenerate" class="main-tab-button inactive text-lg font-semibold py-3 px-8 rounded-lg border-b-4">
+                Buat Gambar AI
+            </button>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- ============ KONTEN TAB EDIT GAMBAR ========= -->
+        <!-- ============================================= -->
+        <div id="contentTabEdit" class="main-content-tab">
+            <!-- Area Upload -->
+            <div class="max-w-xl mx-auto mb-8 p-6 bg-gray-800 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold text-center mb-4">Mulai dengan Mengunggah Gambar</h2>
+                <label for="imageUpload" class="block text-sm font-medium text-gray-300 mb-2">Pilih Gambar:</label>
+                <input type="file" id="imageUpload" accept="image/png, image/jpeg" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition">
+            </div>
+
+            <!-- Konten Utama (Kontrol dan Preview) -->
+            <div id="mainContent" class="hidden grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                <!-- Kolom Kontrol -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col space-y-6">
+                    <h2 class="text-2xl font-semibold mb-0 border-b border-gray-700 pb-2">Panel Kontrol Editor</h2>
+
+                    <!-- Tabs Editor -->
+                    <div>
+                        <div class="flex border-b border-gray-700">
+                            <button id="tabAI" class="tab-button flex-1 py-2 px-4 text-center font-medium rounded-t-lg bg-gray-700">Edit AI</button>
+                            <button id="tabTransform" class="tab-button flex-1 py-2 px-4 text-center font-medium text-gray-400 hover:bg-gray-700 rounded-t-lg">Ukuran & Pangkas</button>
+                        </div>
+                    </div>
+
+                    <!-- KONTEN TAB: Edit AI -->
+                    <div id="tabContentAI" class="tab-content space-y-6">
+                        <!-- Fieldset: Background -->
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Hapus/Ganti Background</legend>
+                            <div>
+                                <label for="bgEngineSelect" class="block text-sm font-medium text-gray-300 mb-1">Metode:</label>
+                                <select id="bgEngineSelect" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="imgly" selected>Browser (Cepat, Offline)</option>
+                                    <option value="gemini">AI (Kualitas Tinggi, Online)</option>
+                                </select>
+                            </div>
+                            <div id="bgGeminiPromptGroup" class="hidden space-y-2">
+                                <label for="bgAiPrompt" class="block text-sm font-medium text-gray-300 mb-1">Prompt AI (Hanya untuk Metode AI):</label>
+                                <input type="text" id="bgAiPrompt" placeholder="Contoh: 'hapus background'" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500">
+                                <p class="text-xs text-gray-500">Default: "remove background".</p>
+                            </div>
+                            <button id="processBgButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                                Proses Background
+                            </button>
+                        </fieldset>
+                        
+                        <!-- Fieldset: Ekspansi AI -->
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Ekspansi AI (Outpainting)</legend>
+                            <div>
+                                <label for="aiAspectRatioSelect" class="block text-sm font-medium text-gray-300 mb-1">Aspek Rasio Baru:</label>
+                                <select id="aiAspectRatioSelect" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                    <option value="1:1">Persegi (1:1)</option>
+                                    <option value="16:9">Lanskap (16:9)</option>
+                                    <option value="9:16">Potret (9:16)</option>
+                                    <option value="4:3">Lanskap (4:3)</option>
+                                    <option value="3:4">Potret (3:4)</option>
+                                </select>
+                            </div>
+                            <button id="aiExpandButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                                Terapkan Ekspansi AI
+                            </button>
+                        </fieldset>
+                        
+                        <!-- Inpainting -->
+                        <fieldset id="inpaintFieldset" class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Inpainting (Hapus/Ganti Objek)</legend>
+                            <div>
+                                <label for="inpaintPrompt" class="block text-sm font-medium text-gray-300 mb-1">Prompt AI:</label>
+                                <input type="text" id="inpaintPrompt" placeholder="Contoh: 'hapus orang ini' atau 'tambahkan kucing'" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <button id="startMaskButton" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                                Tandai Area yang Akan Diubah
+                            </button>
+                            <div id="maskToolbar" class="hidden space-y-4">
+                                <p class="text-sm text-center text-cyan-300">Gambar di atas gambar untuk menandai area.</p>
+                                <div>
+                                    <label for="brushSizeSlider" class="block text-sm font-medium text-gray-300 mb-1">Ukuran Kuas: <span id="brushSizeLabel">20</span>px</label>
+                                    <input type="range" id="brushSizeSlider" min="5" max="100" value="20" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                </div>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <button id="applyInpaintButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Terapkan</button>
+                                    <button id="clearMaskButton" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Hapus Tanda</button>
+                                    <button id="cancelMaskButton" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Batal</button>
+                                </div>
+                            </div>
+                        </fieldset>
+                    </div>
+
+                    <!-- KONTEN TAB: Ukuran & Pangkas -->
+                    <div id="tabContentTransform" class="tab-content space-y-6 hidden">
+                        <!-- Fieldset: Resize -->
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Ubah Ukuran</legend>
+                            <div class="grid grid-cols-2 gap-4 mb-2">
+                                <div>
+                                    <label for="imgWidth" class="block text-sm font-medium text-gray-300 mb-1">Lebar (px)</label>
+                                    <input type="number" id="imgWidth" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                </div>
+                                <div>
+                                    <label for="imgHeight" class="block text-sm font-medium text-gray-300 mb-1">Tinggi (px)</label>
+                                    <input type="number" id="imgHeight" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                </div>
+                            </div>
+                            <div class="flex items-center mb-4">
+                                <input type="checkbox" id="keepAspectRatio" checked class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                                <label for="keepAspectRatio" class="ml-2 text-sm font-medium text-gray-300">Jaga Rasio Aspek</label>
+                            </div>
+                            <button id="resizeButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Terapkan Ukuran
+                            </button>
+                        </fieldset>
+
+                        <!-- Fieldset: Crop -->
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Pangkas (Crop) Sederhana</legend>
+                            <div>
+                                <label for="cropAspectRatioSelect" class="block text-sm font-medium text-gray-300 mb-1">Aspek Rasio Baru:</label>
+                                <select id="cropAspectRatioSelect" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                    <option value="1:1">Persegi (1:1)</option>
+                                    <option value="16:9">Lanskap (16:9)</option>
+                                    <option value="9:16">Potret (9:16)</option>
+                                    <option value="4:3">Lanskap (4:3)</option>
+                                    <option value="3:4">Potret (3:4)</option>
+                                </select>
+                            </div>
+                            <button id="cropButton" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                                Pangkas (dari Tengah)
+                            </button>
+                        </fieldset>
+                    </div>
+                    
+                    <!-- BAGIAN DOWNLOAD EDITOR -->
+                    <fieldset class="border border-gray-700 p-4 rounded-lg">
+                        <legend class="text-lg font-medium px-2">Simpan & Konversi</legend>
+                        <div class="mb-4">
+                            <label for="formatSelect" class="block text-sm font-medium text-gray-300 mb-1">Format Output:</label>
+                            <select id="formatSelect" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                <option value="png">PNG (Transparan)</option>
+                                <option value="jpg">JPG (Kualitas Kustom)</option>
+                                <option value="favicon-png">Favicon (PNG 32x32)</option>
+                                <option value="favicon-ico">Favicon (.ico, Berbagai Ukuran)</option>
+                            </select>
+                        </div>
+                        <div id="jpgQualityGroup" class="mb-4 hidden">
+                            <label for="jpgQuality" class="block text-sm font-medium text-gray-300 mb-1">Kualitas JPG: <span id="jpgQualityLabel">90</span>%</label>
+                            <input type="range" id="jpgQuality" min="10" max="100" value="90" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="space-y-3">
+                            <button id="downloadEditedButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-md">
+                                Download Hasil Edit
+                            </button>
+                            <button id="downloadOriginalButton" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Download Original
+                            </button>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <!-- Kolom Preview Editor -->
+                <div class="space-y-6">
+                    <!-- Preview Asli -->
+                    <div>
+                        <h2 class="text-2xl font-semibold mb-3">Gambar Asli</h2>
+                        <div class="bg-gray-800 p-4 rounded-lg shadow-inner min-h-[200px] flex items-center justify-center">
+                            <img id="originalPreview" src="" alt="Preview Gambar Asli" class="max-w-full max-h-[400px] h-auto rounded-md hidden">
+                            <p id="originalPlaceholder" class="text-gray-500">Belum ada gambar</sP>
+                        </div>
+                    </div>
+                    <!-- Preview Hasil -->
+                    <div>
+                        <h2 class="text-2xl font-semibold mb-3">Hasil Edit</h2>
+                        <div id="previewWrapper" class="bg-gray-800 p-4 rounded-lg shadow-inner min-h-[200px] flex items-center justify-center">
+                            <img id="editedPreview" src="" alt="Preview Hasil Edit" class="max-w-full max-h-[400px] h-auto rounded-md hidden opacity-100 z-10">
+                            <canvas id="maskCanvas"></canvas>
+                            <p id="editedPlaceholder" class="text-gray-500 z-0">Hasil edit akan muncul di sini</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ============================================= -->
+        <!-- ============ KONTEN TAB BUAT GAMBAR ========= -->
+        <!-- ============================================= -->
+        <div id="contentTabGenerate" class="main-content-tab hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                <!-- Kolom Kontrol Generator -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col space-y-6">
+                    <h2 class="text-2xl font-semibold mb-0 border-b border-gray-700 pb-2">Panel Kontrol Generator</h2>
+                    
+                    <!-- Sub-Tabs Generator -->
+                    <div>
+                        <div class="flex border-b border-gray-700">
+                            <button id="genTabFromText" class="tab-button flex-1 py-2 px-4 text-center font-medium rounded-t-lg bg-gray-700">Dari Teks</button>
+                            <button id="genTabFromImage" class="tab-button flex-1 py-2 px-4 text-center font-medium text-gray-400 hover:bg-gray-700 rounded-t-lg">Dari Gambar</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Konten Sub-Tab: Dari Teks -->
+                    <div id="genContentFromText" class="space-y-4">
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Generator Text-to-Image</legend>
+                            <p class="text-sm text-gray-400">Buat gambar dari nol menggunakan prompt terbimbing.</p>
+                            
+                            <!-- Prompt Utama -->
+                            <div>
+                                <label for="genPromptText" class="block text-sm font-medium text-gray-300 mb-1">Prompt Utama:</label>
+                                <textarea id="genPromptText" rows="4" placeholder="Seekor naga merah terbang di atas gunung berapi, gaya sinematik..." class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2"></textarea>
+                                <button id="refinePromptButton" class="mt-2 w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                                    Sempurnakan Prompt (AI)
+                                </button>
+                            </div>
+                            
+                            <!-- Guided Parameters -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label for="genJenis" class="block text-sm font-medium text-gray-300 mb-1">Jenis Gambar:</label>
+                                    <select id="genJenis" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                        <option value="Foto">Foto</option>
+                                        <option value="Gambar">Gambar</option>
+                                        <option value="Logo">Logo</option>
+                                        <option value="Seni Konsep">Seni Konsep</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="genDimensi" class="block text-sm font-medium text-gray-300 mb-1">Dimensi:</label>
+                                    <select id="genDimensi" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                        <option value="2D">2D</option>
+                                        <option value="3D">3D</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="genRasio" class="block text-sm font-medium text-gray-300 mb-1">Aspek Rasio:</label>
+                                    <select id="genRasio" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                        <option value="1:1">Kotak (1:1)</option>
+                                        <option value="16:9">Lanskap (16:9)</option>
+                                        <option value="4:3">Lanskap (4:3)</option>
+                                        <option value="9:16">Potret (9:16)</option>
+                                        <option value="3:4">Potret (3:4)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="genTipe" class="block text-sm font-medium text-gray-300 mb-1">Tipe (Gaya):</label>
+                                    <select id="genTipe" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2">
+                                        <option value="Realistis">Realistis</option>
+                                        <option value="Kartun">Kartun</option>
+                                        <option value="Lukisan Cat Minyak">Lukisan Cat Minyak</option>
+                                        <option value="Anime">Anime</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <button id="generateTextToImageButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg">
+                                Buat Gambar (Dari Teks)
+                            </button>
+                        </fieldset>
+                    </div>
+                    
+                    <!-- Konten Sub-Tab: Dari Gambar -->
+                    <div id="genContentFromImage" class="hidden space-y-4">
+                        <fieldset class="border border-gray-700 p-4 rounded-lg space-y-4">
+                            <legend class="text-lg font-medium px-2">Generator Image-to-Image</legend>
+                            <p class="text-sm text-gray-400">Buat gambar baru berdasarkan gambar referensi.</p>
+
+                            <!-- Upload Referensi -->
+                            <div>
+                                <label for="genRefUpload" class="block text-sm font-medium text-gray-300 mb-2">Upload Gambar Referensi:</label>
+                                <input type="file" id="genRefUpload" accept="image/png, image/jpeg" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 transition">
+                            </div>
+
+                            <!-- Preview Referensi -->
+                            <div class="bg-gray-700 p-2 rounded-lg shadow-inner min-h-[100px] flex items-center justify-center">
+                                <img id="genRefPreview" src="" alt="Preview Referensi" class="max-w-full max-h-[200px] h-auto rounded-md hidden">
+                                <p id="genRefPlaceholder" class="text-gray-500">Preview referensi</p>
+                            </div>
+                            
+                            <!-- Prompt -->
+                            <div>
+                                <label for="genPromptImage" class="block text-sm font-medium text-gray-300 mb-1">Prompt (Deskripsikan perubahan):</label>
+                                <textarea id="genPromptImage" rows="3" placeholder="Ubah kucing ini menjadi harimau, pertahankan posenya..." class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2"></textarea>
+                                <button id="analyzeImageButton" class="mt-2 w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                                    Analisa Prompt dari Referensi (AI)
+                                </button>
+                            </div>
+                            
+                            <button id="generateImageToImageButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg">
+                                Buat Gambar (Dari Gambar)
+                            </button>
+                        </fieldset>
+                    </div>
+                </div>
+
+                <!-- Kolom Hasil Generator -->
+                <div class="space-y-6">
+                    <div>
+                        <h2 class="text-2xl font-semibold mb-3">Hasil Generasi AI</h2>
+                        <div class="bg-gray-800 p-4 rounded-lg shadow-inner min-h-[400px] flex items-center justify-center">
+                            <img id="generatedImagePreview" src="" alt="Hasil Generasi AI" class="max-w-full max-h-[600px] h-auto rounded-md hidden">
+                            <p id="generatedImagePlaceholder" class="text-gray-500">Hasil gambar akan muncul di sini</p>
+                        </div>
+                    </div>
+                    <button id="downloadGeneratedImageButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg hidden">
+                        Download Hasil Gambar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <!-- Hidden Canvas for processing -->
+    <canvas id="editCanvas" class="hidden"></canvas>
+    <!-- Hidden Download Link -->
+    <a id="downloadLink" class="hidden"></a>
+
+    <script>
+        // === STATE UTAMA ===
+        let originalImageFile = null;
+        let originalImageDataURL = null;
+        let currentImageDataURL = null;
+        let originalImageDimensions = { w: 0, h: 0, ratio: 1 };
+        const originalImageObject = new Image();
+        let currentBlobUrl = null;
+        let isMasking = false;
+        let isDrawingMask = false;
+        let currentBrushSize = 20;
+        let generatedImageDataURL = null; // State baru untuk gambar yg digenerasi
+        let genRefImageDataURL = null; // State baru untuk gambar referensi
+
+        // === DOM ELEMENTS ===
+        
+        // --- Global / UI ---
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const messageBox = document.getElementById('messageBox');
+        
+        // --- Tab Utama ---
+        const mainTabEdit = document.getElementById('mainTabEdit');
+        const mainTabGenerate = document.getElementById('mainTabGenerate');
+        const contentTabEdit = document.getElementById('contentTabEdit');
+        const contentTabGenerate = document.getElementById('contentTabGenerate');
+
+        // --- Tab Edit (v7) ---
+        const imageUpload = document.getElementById('imageUpload');
+        const mainContent = document.getElementById('mainContent');
+        const originalPreview = document.getElementById('originalPreview');
+        const editedPreview = document.getElementById('editedPreview');
+        const originalPlaceholder = document.getElementById('originalPlaceholder');
+        const editedPlaceholder = document.getElementById('editedPlaceholder');
+        const previewWrapper = document.getElementById('previewWrapper');
+        const tabAI = document.getElementById('tabAI');
+        const tabTransform = document.getElementById('tabTransform');
+        const tabContentAI = document.getElementById('tabContentAI');
+        const tabContentTransform = document.getElementById('tabContentTransform');
+        const bgEngineSelect = document.getElementById('bgEngineSelect');
+        const bgGeminiPromptGroup = document.getElementById('bgGeminiPromptGroup');
+        const bgAiPrompt = document.getElementById('bgAiPrompt');
+        const processBgButton = document.getElementById('processBgButton');
+        const aiAspectRatioSelect = document.getElementById('aiAspectRatioSelect');
+        const aiExpandButton = document.getElementById('aiExpandButton');
+        const inpaintFieldset = document.getElementById('inpaintFieldset');
+        const inpaintPrompt = document.getElementById('inpaintPrompt');
+        const startMaskButton = document.getElementById('startMaskButton');
+        const maskToolbar = document.getElementById('maskToolbar');
+        const brushSizeSlider = document.getElementById('brushSizeSlider');
+        const brushSizeLabel = document.getElementById('brushSizeLabel');
+        const applyInpaintButton = document.getElementById('applyInpaintButton');
+        const clearMaskButton = document.getElementById('clearMaskButton');
+        const cancelMaskButton = document.getElementById('cancelMaskButton');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const maskCtx = maskCanvas.getContext('2d');
+        const imgWidth = document.getElementById('imgWidth');
+        const imgHeight = document.getElementById('imgHeight');
+        const keepAspectRatio = document.getElementById('keepAspectRatio');
+        const resizeButton = document.getElementById('resizeButton');
+        const cropAspectRatioSelect = document.getElementById('cropAspectRatioSelect');
+        const cropButton = document.getElementById('cropButton');
+        const formatSelect = document.getElementById('formatSelect');
+        const jpgQualityGroup = document.getElementById('jpgQualityGroup');
+        const jpgQuality = document.getElementById('jpgQuality');
+        const jpgQualityLabel = document.getElementById('jpgQualityLabel');
+        const downloadEditedButton = document.getElementById('downloadEditedButton');
+        const downloadOriginalButton = document.getElementById('downloadOriginalButton');
+        const editCanvas = document.getElementById('editCanvas');
+        const ctx = editCanvas.getContext('2d');
+        const downloadLink = document.getElementById('downloadLink');
+
+        // --- Tab Generate (v8) ---
+        const genTabFromText = document.getElementById('genTabFromText');
+        const genTabFromImage = document.getElementById('genTabFromImage');
+        const genContentFromText = document.getElementById('genContentFromText');
+        const genContentFromImage = document.getElementById('genContentFromImage');
+        // Text-to-Image
+        const genPromptText = document.getElementById('genPromptText');
+        const refinePromptButton = document.getElementById('refinePromptButton');
+        const genJenis = document.getElementById('genJenis');
+        const genDimensi = document.getElementById('genDimensi');
+        const genRasio = document.getElementById('genRasio');
+        const genTipe = document.getElementById('genTipe');
+        const generateTextToImageButton = document.getElementById('generateTextToImageButton');
+        // Image-to-Image
+        const genRefUpload = document.getElementById('genRefUpload');
+        const genRefPreview = document.getElementById('genRefPreview');
+        const genRefPlaceholder = document.getElementById('genRefPlaceholder');
+        const genPromptImage = document.getElementById('genPromptImage');
+        const analyzeImageButton = document.getElementById('analyzeImageButton');
+        const generateImageToImageButton = document.getElementById('generateImageToImageButton');
+        // Hasil
+        const generatedImagePreview = document.getElementById('generatedImagePreview');
+        const generatedImagePlaceholder = document.getElementById('generatedImagePlaceholder');
+        const downloadGeneratedImageButton = document.getElementById('downloadGeneratedImageButton');
+
+
+        // === EVENT LISTENERS ===
+
+        // --- Listener Tab Utama ---
+        mainTabEdit.addEventListener('click', () => switchMainTab('edit'));
+        mainTabGenerate.addEventListener('click', () => switchMainTab('generate'));
+        
+        // --- Listener Tab Edit (v7) ---
+        imageUpload.addEventListener('change', handleImageUpload);
+        tabAI.addEventListener('click', () => switchTab('ai'));
+        tabTransform.addEventListener('click', () => switchTab('transform'));
+        bgEngineSelect.addEventListener('change', handleEngineChange);
+        processBgButton.addEventListener('click', handleBackgroundProcess);
+        aiExpandButton.addEventListener('click', handleAIExpand);
+        startMaskButton.addEventListener('click', startMasking);
+        brushSizeSlider.addEventListener('input', updateBrushSize);
+        applyInpaintButton.addEventListener('click', applyInpainting);
+        clearMaskButton.addEventListener('click', clearMask);
+        cancelMaskButton.addEventListener('click', cancelMasking);
+        maskCanvas.addEventListener('mousedown', startDrawingMask);
+        maskCanvas.addEventListener('mousemove', drawMask);
+        maskCanvas.addEventListener('mouseup', stopDrawingMask);
+        maskCanvas.addEventListener('mouseout', stopDrawingMask);
+        maskCanvas.addEventListener('touchstart', startDrawingMask, { passive: false });
+        maskCanvas.addEventListener('touchmove', drawMask, { passive: false });
+        maskCanvas.addEventListener('touchend', stopDrawingMask);
+        imgWidth.addEventListener('input', () => handleDimensionChange('width'));
+        imgHeight.addEventListener('input', () => handleDimensionChange('height'));
+        resizeButton.addEventListener('click', applyResize);
+        cropButton.addEventListener('click', handleCrop);
+        formatSelect.addEventListener('change', () => {
+            jpgQualityGroup.classList.toggle('hidden', formatSelect.value !== 'jpg');
+        });
+        jpgQuality.addEventListener('input', () => {
+            jpgQualityLabel.textContent = jpgQuality.value;
+        });
+        downloadEditedButton.addEventListener('click', handleDownloadEdited);
+        downloadOriginalButton.addEventListener('click', handleDownloadOriginal);
+
+        // --- Listener Tab Generate (v8) ---
+        genTabFromText.addEventListener('click', () => switchGenTab('text'));
+        genTabFromImage.addEventListener('click', () => switchGenTab('image'));
+        refinePromptButton.addEventListener('click', handleRefinePrompt);
+        analyzeImageButton.addEventListener('click', handleAnalyzeImage);
+        genRefUpload.addEventListener('change', handleRefImageUpload);
+        generateTextToImageButton.addEventListener('click', handleGenerateTextToImage);
+        generateImageToImageButton.addEventListener('click', handleGenerateImageToImage);
+        downloadGeneratedImageButton.addEventListener('click', handleDownloadGenerated);
+
+
+        // === FUNGSI-FUNGSI ===
+
+        // --- Fungsi Tab Utama ---
+        function switchMainTab(tabName) {
+            if (tabName === 'edit') {
+                mainTabEdit.classList.add('active');
+                mainTabEdit.classList.remove('inactive');
+                mainTabGenerate.classList.add('inactive');
+                mainTabGenerate.classList.remove('active');
+                contentTabEdit.classList.remove('hidden');
+                contentTabGenerate.classList.add('hidden');
+            } else { // generate
+                mainTabGenerate.classList.add('active');
+                mainTabGenerate.classList.remove('inactive');
+                mainTabEdit.classList.add('inactive');
+                mainTabEdit.classList.remove('active');
+                contentTabGenerate.classList.remove('hidden');
+                contentTabEdit.classList.add('hidden');
+            }
+        }
+
+        // --- Fungsi Tab Generator ---
+        function switchGenTab(tabName) {
+            if (tabName === 'text') {
+                genTabFromText.classList.add('bg-gray-700');
+                genTabFromText.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                genTabFromImage.classList.add('text-gray-400', 'hover:bg-gray-700');
+                genTabFromImage.classList.remove('bg-gray-700');
+                genContentFromText.classList.remove('hidden');
+                genContentFromImage.classList.add('hidden');
+            } else { // image
+                genTabFromImage.classList.add('bg-gray-700');
+                genTabFromImage.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                genTabFromText.classList.add('text-gray-400', 'hover:bg-gray-700');
+                genTabFromText.classList.remove('bg-gray-700');
+                genContentFromImage.classList.remove('hidden');
+                genContentFromText.classList.add('hidden');
+            }
+        }
+        
+        function handleRefImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                genRefImageDataURL = event.target.result;
+                genRefPreview.src = genRefImageDataURL;
+                genRefPreview.classList.remove('hidden');
+                genRefPlaceholder.classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Fungsi Bantuan Generator (PANGGILAN API BARU) ---
+        
+        async function handleRefinePrompt() {
+            const currentPrompt = genPromptText.value;
+            if (!currentPrompt) return showMessage('Silakan masukkan prompt terlebih dahulu.', 'error');
+            
+            showLoading(true);
+            try {
+                const systemPrompt = "You are a creative prompt engineer. Enhance the following user's prompt to be highly descriptive, artistic, and effective for an AI image generator. Respond ONLY with the new, refined prompt. Keep the core idea. (Bahasa: Sempurnakan prompt berikut agar deskriptif dan artistik. Jawab HANYA dengan prompt baru.)";
+                const refinedPrompt = await callGeminiTextOrVisionApi(systemPrompt + "\n\n" + currentPrompt, null);
+                genPromptText.value = refinedPrompt;
+                showMessage('Prompt berhasil disempurnakan.', 'success');
+            } catch (error) {
+                showMessage(`Gagal menyempurnakan prompt: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function handleAnalyzeImage() {
+            if (!genRefImageDataURL) return showMessage('Silakan unggah gambar referensi terlebih dahulu.', 'error');
+            
+            showLoading(true);
+            try {
+                const prompt = "Analyze this image. Describe its style, content, colors, and composition in detail, as a descriptive prompt for an AI image generator. Respond ONLY with the prompt. (Bahasa: Analisa gambar ini. Deskripsikan gaya, konten, dan komposisinya sebagai prompt untuk AI generator. Jawab HANYA dengan prompt.)";
+                const base64Data = genRefImageDataURL.split(',')[1];
+                const mimeType = genRefImageDataURL.match(/data:(image\/[a-z]+);/)[1] || 'image/png';
+                
+                const analyzedPrompt = await callGeminiTextOrVisionApi(prompt, { data: base64Data, mimeType });
+                genPromptImage.value = analyzedPrompt; // Isi ke kotak prompt Image-to-Image
+                showMessage('Analisa gambar berhasil.', 'success');
+            } catch (error) {
+                showMessage(`Gagal menganalisa gambar: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function handleGenerateTextToImage() {
+            let prompt = genPromptText.value;
+            if (!prompt) return showMessage('Silakan masukkan prompt.', 'error');
+
+            // Tambahkan parameter terbimbing ke prompt
+            prompt += `, ${genJenis.value}, ${genDimensi.value}, ${genTipe.value}, aspect ratio ${genRasio.value}`;
+            
+            showLoading(true);
+            generatedImagePreview.classList.add('hidden');
+            generatedImagePlaceholder.classList.remove('hidden');
+            downloadGeneratedImageButton.classList.add('hidden');
+
+            try {
+                const base64Data = await callImagenTextToImageApi(prompt);
+                generatedImageDataURL = `data:image/png;base64,${base64Data}`;
+                generatedImagePreview.src = generatedImageDataURL;
+                generatedImagePreview.classList.remove('hidden');
+                generatedImagePlaceholder.classList.add('hidden');
+                downloadGeneratedImageButton.classList.remove('hidden');
+                showMessage('Gambar berhasil dibuat!', 'success');
+            } catch (error) {
+                showMessage(`Gagal membuat gambar: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function handleGenerateImageToImage() {
+            const prompt = genPromptImage.value;
+            if (!prompt) return showMessage('Silakan masukkan prompt.', 'error');
+            if (!genRefImageDataURL) return showMessage('Silakan unggah gambar referensi.', 'error');
+
+            showLoading(true);
+            generatedImagePreview.classList.add('hidden');
+            generatedImagePlaceholder.classList.remove('hidden');
+            downloadGeneratedImageButton.classList.add('hidden');
+
+            try {
+                const base64Data = genRefImageDataURL.split(',')[1];
+                const mimeType = genRefImageDataURL.match(/data:(image\/[a-z]+);/)[1] || 'image/png';
+                
+                // Menggunakan callImageApi (gemini-2.5-flash-image-preview) yang sudah ada
+                const generatedImageBase64 = await callImageApi(prompt, base64Data, mimeType);
+                generatedImageDataURL = `data:image/png;base64,${generatedImageBase64}`;
+                generatedImagePreview.src = generatedImageDataURL;
+                generatedImagePreview.classList.remove('hidden');
+                generatedImagePlaceholder.classList.add('hidden');
+                downloadGeneratedImageButton.classList.remove('hidden');
+                showMessage('Gambar berhasil dibuat!', 'success');
+            } catch (error) {
+                showMessage(`Gagal membuat gambar: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        function handleDownloadGenerated() {
+            if (!generatedImageDataURL) return showMessage('Tidak ada gambar untuk di-download.', 'error');
+            downloadLink.href = generatedImageDataURL;
+            downloadLink.download = `generated-image-${Date.now()}.png`;
+            downloadLink.click();
+        }
+
+        // --- PANGGILAN API (BARU, LAMA, DAN MODIFIKASI) ---
+
+        // API 1: (BARU) Untuk Imagen T-t-I (imagen-3.0-generate-002)
+        async function callImagenTextToImageApi(prompt) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+            const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1 } };
+
+            const response = await fetchWithBackoff(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error (${response.status}): ${errorBody.error?.message || 'Unknown error'}`);
+            }
+            const result = await response.json();
+            if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+                return result.predictions[0].bytesBase64Encoded;
+            } else {
+                throw new Error('Respon API tidak mengandung data gambar.');
+            }
+        }
+
+        // API 2: (BARU) Untuk Gemini Teks/Visi (gemini-2.5-flash-preview-09-2025)
+        async function callGeminiTextOrVisionApi(prompt, image = null) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            let parts = [{ text: prompt }];
+            if (image && image.data && image.mimeType) {
+                parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+            }
+            
+            const payload = {
+                contents: [{ role: "user", parts: parts }]
+            };
+
+            const response = await fetchWithBackoff(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error (${response.status}): ${errorBody.error?.message || 'Unknown error'}`);
+            }
+            
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+                return text;
+            } else {
+                throw new Error('Respon AI tidak mengandung teks.');
+            }
+        }
+
+        // API 3: (LAMA - dari v7) Untuk Gemini I-t-I (gemini-2.5-flash-image-preview)
+        // (Digunakan untuk Inpainting, Outpainting, dan Generasi 'Dari Gambar')
+        async function callImageApi(userPrompt, base64Data, mimeType) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: userPrompt },
+                        { inlineData: { mimeType: mimeType, data: base64Data } }
+                    ]
+                }],
+                generationConfig: {
+                    responseModalities: ['TEXT', 'IMAGE']
+                },
+            };
+            const response = await fetchWithBackoff(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error (${response.status}): ${errorBody.error?.message || 'Unknown error'}`);
+            }
+            const result = await response.json();
+            const imagePart = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+            if (!imagePart) {
+                const textPart = result?.candidates?.[0]?.content?.parts?.find(p => p.text);
+                if (textPart) throw new Error(`AI merespon dengan teks: ${textPart.text}`);
+                throw new Error('Respon AI tidak mengandung gambar.');
+            }
+            return imagePart.inlineData.data;
+        }
+
+
+        // --- FUNGSI-FUNGSI DARI V7 (EDITOR) ---
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+            if (isMasking) cancelMasking();
+            originalImageFile = file;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                originalImageDataURL = event.target.result;
+                currentImageDataURL = event.target.result;
+                originalPreview.src = originalImageDataURL;
+                editedPreview.src = currentImageDataURL;
+                originalPreview.classList.remove('hidden');
+                editedPreview.classList.remove('hidden');
+                originalPlaceholder.classList.add('hidden');
+                editedPlaceholder.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+                originalImageObject.src = originalImageDataURL;
+                originalImageObject.onload = () => {
+                    originalImageDimensions = { w: originalImageObject.naturalWidth, h: originalImageObject.naturalHeight, ratio: originalImageObject.naturalWidth / originalImageObject.naturalHeight };
+                    imgWidth.value = originalImageDimensions.w;
+                    imgHeight.value = originalImageDimensions.h;
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function switchTab(tab) {
+            if (isMasking) cancelMasking();
+            if (tab === 'ai') {
+                tabAI.classList.add('bg-gray-700');
+                tabAI.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                tabTransform.classList.add('text-gray-400', 'hover:bg-gray-700');
+                tabTransform.classList.remove('bg-gray-700');
+                tabContentAI.classList.remove('hidden');
+                tabContentTransform.classList.add('hidden');
+            } else {
+                tabTransform.classList.add('bg-gray-700');
+                tabTransform.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                tabAI.classList.add('text-gray-400', 'hover:bg-gray-700');
+                tabAI.classList.remove('bg-gray-700');
+                tabContentTransform.classList.remove('hidden');
+                tabContentAI.classList.add('hidden');
+            }
+        }
+        
+        function handleEngineChange() {
+            bgGeminiPromptGroup.classList.toggle('hidden', bgEngineSelect.value !== 'gemini');
+        }
+
+        function handleDimensionChange(changed) {
+            if (!keepAspectRatio.checked) return;
+            const w = parseInt(imgWidth.value);
+            const h = parseInt(imgHeight.value);
+            const currentImg = new Image();
+            currentImg.onload = () => {
+                const ratio = currentImg.naturalWidth / currentImg.naturalHeight;
+                 if (changed === 'width' && !isNaN(w)) imgHeight.value = Math.round(w / ratio);
+                 else if (changed === 'height' && !isNaN(h)) imgWidth.value = Math.round(h * ratio);
+            }
+            currentImg.src = currentImageDataURL;
+        }
+
+        function applyResize() {
+            if (!currentImageDataURL) return showMessage('Silakan unggah gambar terlebih dahulu.', 'error');
+            const w = parseInt(imgWidth.value);
+            const h = parseInt(imgHeight.value);
+            if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) return showMessage('Lebar dan tinggi tidak valid.', 'error');
+            const imgToResize = new Image();
+            imgToResize.onload = () => {
+                editCanvas.width = w;
+                editCanvas.height = h;
+                ctx.drawImage(imgToResize, 0, 0, w, h);
+                updateCurrentImage(editCanvas.toDataURL('image/png'));
+                showMessage('Ukuran gambar berhasil diubah.', 'success');
+            };
+            imgToResize.onerror = () => showMessage('Gagal memuat gambar untuk diubah ukurannya.', 'error');
+            if (currentImageDataURL.startsWith('blob:')) imgToResize.crossOrigin = "anonymous";
+            imgToResize.src = currentImageDataURL;
+        }
+
+        function handleCrop() {
+            if (!currentImageDataURL) return showMessage('Silakan unggah gambar terlebih dahulu.', 'error');
+            const [w, h] = cropAspectRatioSelect.value.split(':').map(Number);
+            const targetRatio = w / h;
+            const imgToCrop = new Image();
+            imgToCrop.onload = () => {
+                const currentW = imgToCrop.naturalWidth, currentH = imgToCrop.naturalHeight;
+                const currentRatio = currentW / currentH;
+                let newW, newH, cropX, cropY;
+                if (targetRatio > currentRatio) {
+                    newW = currentW; newH = currentW / targetRatio;
+                    cropX = 0; cropY = (currentH - newH) / 2;
+                } else {
+                    newH = currentH; newW = currentH * targetRatio;
+                    cropY = 0; cropX = (currentW - newW) / 2;
+                }
+                editCanvas.width = newW; editCanvas.height = newH;
+                ctx.drawImage(imgToCrop, cropX, cropY, newW, newH, 0, 0, newW, newH);
+                updateCurrentImage(editCanvas.toDataURL('image/png'));
+                showMessage('Gambar berhasil dipangkas.', 'success');
+            };
+            imgToCrop.onerror = () => showMessage('Gagal memuat gambar untuk dipangkas.', 'error');
+            if (currentImageDataURL.startsWith('blob:')) imgToCrop.crossOrigin = "anonymous";
+            imgToCrop.src = currentImageDataURL;
+        }
+        
+        async function handleBackgroundProcess() {
+            if (!originalImageFile || !originalImageDataURL) return showMessage('Silakan unggah gambar terlebih dahulu.', 'error');
+            showLoading(true);
+            try {
+                if (bgEngineSelect.value === 'gemini') {
+                    await processWithGeminiBackground(originalImageDataURL, originalImageFile.type);
+                } else {
+                    await processWithImgly();
+                }
+            } catch (error) {
+                showMessage(`${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function processWithImgly() {
+            if (typeof Imgly === 'undefined' || !Imgly.removeBackground) {
+                throw new Error("Metode Browser (Imgly) gagal dimuat. Periksa koneksi internet/ad-blocker Anda.");
+            }
+            const blob = await Imgly.removeBackground(originalImageDataURL, { publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal/dist/assets/' });
+            const dataUrl = await blobToDataURL(blob);
+            updateCurrentImage(dataUrl);
+            showMessage('Background berhasil dihapus (Browser).', 'success');
+        }
+
+        async function processWithGeminiBackground(imageDataUrl, mimeType) {
+            let prompt = bgAiPrompt.value.trim() || "remove background";
+            const base64Data = imageDataUrl.split(',')[1];
+            const generatedImageBase64 = await callImageApi(prompt, base64Data, mimeType);
+            updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
+            showMessage('Edit AI Background berhasil.', 'success');
+        }
+
+        async function handleAIExpand() {
+            if (!currentImageDataURL) return showMessage('Silakan unggah gambar terlebih dahulu.', 'error');
+            const [targetWNum, targetHNum] = aiAspectRatioSelect.value.split(':').map(Number);
+            const targetRatio = targetWNum / targetHNum;
+            showLoading(true);
+            try {
+                const imgToExpand = new Image();
+                imgToExpand.onload = async () => {
+                    const originalW = imgToExpand.naturalWidth, originalH = imgToExpand.naturalHeight;
+                    const currentRatio = originalW / originalH;
+                    let newCanvasW, newCanvasH, drawX, drawY;
+                    if (targetRatio > currentRatio) {
+                        newCanvasW = originalW; newCanvasH = originalW / targetRatio;
+                        if (newCanvasH < originalH) { newCanvasH = originalH; newCanvasW = originalH * targetRatio; }
+                    } else {
+                        newCanvasH = originalH; newCanvasW = originalH * targetRatio;
+                        if (newCanvasW < originalW) { newCanvasW = originalW; newCanvasH = originalW / targetRatio; }
+                    }
+                    drawX = (newCanvasW - originalW) / 2; drawY = (newCanvasH - originalH) / 2;
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = newCanvasW; tempCanvas.height = newCanvasH;
+                    tempCanvas.getContext('2d').drawImage(imgToExpand, drawX, drawY, originalW, originalH);
+                    const imageDataUrlForAI = tempCanvas.toDataURL('image/png');
+                    const base64Data = imageDataUrlForAI.split(',')[1];
+                    const prompt = `Expand the image to a ${aiAspectRatioSelect.value} aspect ratio. Fill the transparent areas...`;
+                    const generatedImageBase64 = await callImageApi(prompt, base64Data, 'image/png');
+                    updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
+                    showMessage('Ekspansi AI berhasil.', 'success');
+                };
+                imgToExpand.onerror = () => { throw new Error('Gagal memuat gambar untuk ekspansi AI.'); };
+                if (currentImageDataURL.startsWith('blob:')) imgToExpand.crossOrigin = "anonymous";
+                imgToExpand.src = currentImageDataURL;
+            } catch (error) {
+                showMessage(`Ekspansi AI Gagal: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        function startMasking() {
+            if (!currentImageDataURL) return showMessage('Silakan unggah gambar terlebih dahulu.', 'error');
+            isMasking = true;
+            maskToolbar.classList.remove('hidden');
+            startMaskButton.classList.add('hidden');
+            maskCanvas.style.display = 'block';
+            const img = new Image();
+            img.onload = () => {
+                maskCanvas.width = img.naturalWidth;
+                maskCanvas.height = img.naturalHeight;
+                setupMaskContext();
+            };
+            img.src = currentImageDataURL;
+            editedPreview.style.opacity = '0.7';
+            setControlsDisabled(true);
+        }
+
+        function setupMaskContext() {
+            maskCtx.lineWidth = currentBrushSize;
+            maskCtx.lineCap = 'round';
+            maskCtx.lineJoin = 'round';
+            maskCtx.strokeStyle = 'rgba(255, 0, 255, 0.7)'; 
+        }
+
+        function updateBrushSize(e) {
+            currentBrushSize = e.target.value;
+            brushSizeLabel.textContent = currentBrushSize;
+            maskCtx.lineWidth = currentBrushSize;
+        }
+
+        function getMaskCoordinates(e) {
+            e.preventDefault();
+            const rect = maskCanvas.getBoundingClientRect();
+            const scaleX = maskCanvas.width / rect.width;
+            const scaleY = maskCanvas.height / rect.height;
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX; clientY = e.clientY;
+            }
+            return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+        }
+
+        function startDrawingMask(e) {
+            isDrawingMask = true;
+            const { x, y } = getMaskCoordinates(e);
+            maskCtx.beginPath();
+            maskCtx.moveTo(x, y);
+        }
+
+        function drawMask(e) {
+            if (!isDrawingMask) return;
+            const { x, y } = getMaskCoordinates(e);
+            maskCtx.lineTo(x, y);
+            maskCtx.stroke();
+        }
+
+        function stopDrawingMask() {
+            if (isDrawingMask) {
+                maskCtx.beginPath();
+                isDrawingMask = false;
+            }
+        }
+
+        function clearMask() {
+            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+        }
+
+        function cancelMasking() {
+            isMasking = false;
+            clearMask();
+            maskToolbar.classList.add('hidden');
+            startMaskButton.classList.remove('hidden');
+            maskCanvas.style.display = 'none';
+            editedPreview.style.opacity = '1';
+            setControlsDisabled(false);
+        }
+
+        function setControlsDisabled(disabled) {
+            inpaintFieldset.parentElement.childNodes.forEach(node => {
+                if (node.nodeName === 'FIELDSET' && node.id !== 'inpaintFieldset') {
+                    node.disabled = disabled;
+                }
+            });
+            tabTransform.disabled = disabled;
+        }
+
+        async function applyInpainting() {
+            const prompt = inpaintPrompt.value.trim();
+            if (!prompt) return showMessage('Silakan masukkan prompt...', 'error');
+            showLoading(true);
+            try {
+                const img = new Image();
+                img.onload = async () => {
+                    editCanvas.width = img.naturalWidth;
+                    editCanvas.height = img.naturalHeight;
+                    ctx.drawImage(img, 0, 0);
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.drawImage(maskCanvas, 0, 0); 
+                    ctx.globalCompositeOperation = 'source-over';
+                    const imageWithHolesDataUrl = editCanvas.toDataURL('image/png');
+                    const base64Data = imageWithHolesDataUrl.split(',')[1];
+                    const finalPrompt = `${prompt}. Fill in the transparent areas...`;
+                    const generatedImageBase64 = await callImageApi(finalPrompt, base64Data, 'image/png');
+                    updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
+                    showMessage('Inpainting AI berhasil.', 'success');
+                    cancelMasking();
+                };
+                img.onerror = () => { throw new Error('Gagal memuat gambar untuk inpainting.'); };
+                if (currentImageDataURL.startsWith('blob:')) img.crossOrigin = "anonymous";
+                img.src = currentImageDataURL;
+            } catch (error) {
+                showMessage(`Inpainting Gagal: ${error.message}`, 'error');
+            } finally {
+                showLoading(false);
+                if (isMasking) cancelMasking();
+            }
+        }
+
+        function handleDownloadOriginal() {
+            if (!originalImageDataURL) return showMessage('Tidak ada gambar asli.', 'error');
+            let filename = originalImageFile?.name.split('.').slice(0, -1).join('.') || 'original-image';
+            const mimeType = originalImageFile ? originalImageFile.type : 'image/png';
+            const extension = mimeType.split('/')[1] || 'png';
+            downloadLink.href = originalImageDataURL;
+            downloadLink.download = `${filename}.${extension}`;
+            downloadLink.click();
+        }
+
+        async function handleDownloadEdited() {
+            if (!currentImageDataURL) return showMessage('Tidak ada gambar editan.', 'error');
+            const format = formatSelect.value;
+            let filename = (originalImageFile?.name.split('.').slice(0, -1).join('.') || 'edited-image') + '-edited';
+            const imgToDownload = new Image();
+            imgToDownload.onload = async () => {
+                let dataURL;
+                editCanvas.width = imgToDownload.naturalWidth;
+                editCanvas.height = imgToDownload.naturalHeight;
+                ctx.drawImage(imgToDownload, 0, 0);
+                if (format === 'favicon-png') {
+                    editCanvas.width = 32; editCanvas.height = 32;
+                    ctx.drawImage(imgToDownload, 0, 0, 32, 32);
+                    dataURL = editCanvas.toDataURL('image/png');
+                    filename = 'favicon.png';
+                } else if (format === 'favicon-ico') {
+                    try {
+                        dataURL = await createIco(imgToDownload);
+                        filename = 'favicon.ico';
+                    } catch (err) {
+                        return showMessage('Gagal membuat .ico.', 'error');
+                    }
+                } else if (format === 'jpg') {
+                    dataURL = editCanvas.toDataURL('image/jpeg', parseInt(jpgQuality.value) / 100);
+                    filename += '.jpg';
+                } else {
+                    dataURL = editCanvas.toDataURL('image/png');
+                    filename += '.png';
+                }
+                downloadLink.href = dataURL;
+                downloadLink.download = filename;
+                downloadLink.click();
+                showMessage('Download hasil edit dimulai...', 'success');
+            };
+            imgToDownload.onerror = () => showMessage('Gagal memuat gambar untuk di-download.', 'error');
+            if (currentImageDataURL.startsWith('blob:')) imgToDownload.crossOrigin = "anonymous";
+            imgToDownload.src = currentImageDataURL;
+        }
+        
+        function updateCurrentImage(dataUrl) {
+            if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+            if (dataUrl.startsWith('blob:')) currentBlobUrl = dataUrl;
+            currentImageDataURL = dataUrl;
+            editedPreview.src = currentImageDataURL;
+            const newImg = new Image();
+            newImg.onload = () => {
+                imgWidth.value = newImg.naturalWidth;
+                imgHeight.value = newImg.naturalHeight;
+            };
+            newImg.src = dataUrl;
+        }
+
+        function blobToDataURL(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+        
+        async function createIco(image) {
+            const sizes = [16, 24, 32, 48, 64];
+            const iconDirEntries = [];
+            let imageDataOffset = 6 + (16 * sizes.length);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const imageBlobs = [];
+            for (const size of sizes) {
+                canvas.width = size; canvas.height = size;
+                ctx.clearRect(0, 0, size, size);
+                ctx.drawImage(image, 0, 0, size, size);
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                const arrayBuffer = await blob.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+                imageBlobs.push(data);
+                const entry = new DataView(new ArrayBuffer(16));
+                entry.setUint8(0, size); entry.setUint8(1, size);
+                entry.setUint16(4, 1, true); entry.setUint16(6, 32, true);
+                entry.setUint32(8, data.length, true);
+                entry.setUint32(12, imageDataOffset, true);
+                iconDirEntries.push(new Uint8Array(entry.buffer));
+                imageDataOffset += data.length;
+            }
+            const header = new DataView(new ArrayBuffer(6));
+            header.setUint16(2, 1, true); header.setUint16(4, sizes.length, true);
+            const icoBlob = new Blob([new Uint8Array(header.buffer), ...iconDirEntries, ...imageBlobs], { type: 'image/vnd.microsoft.icon' });
+            return await blobToDataURL(icoBlob);
+        }
+
+        async function fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok && response.status === 429 && retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                return response;
+            } catch (error) {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                throw error;
+            }
+        }
+        
+        function showLoading(isLoading) {
+            loadingOverlay.classList.toggle('show', isLoading);
+        }
+
+        let messageTimer;
+        function showMessage(message, type = 'success') {
+            clearTimeout(messageTimer);
+            messageBox.textContent = message;
+            messageBox.className = 'show';
+            messageBox.classList.add(type);
+            messageTimer = setTimeout(() => {
+                messageBox.classList.remove('show');
+            }, 3000);
+        }
+
+    </script>
+</body>
+</html>
