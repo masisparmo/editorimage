@@ -689,7 +689,7 @@
             
             showLoading(true);
             try {
-                const systemPrompt = "You are a creative prompt engineer. Enhance the following user's prompt to be highly descriptive, artistic, and effective for an AI image generator. Respond ONLY with the new, refined prompt. Keep the core idea. (Bahasa: Sempurnakan prompt berikut agar deskriptif dan artistik. Jawab HANYA dengan prompt baru.)";
+                const systemPrompt = "You are a creative prompt engineer. Your task is to enhance the user's prompt to be highly descriptive and artistic for an AI image generator. **You MUST respond ONLY with the new, refined prompt, and the response MUST be in Indonesian.** Keep the core idea of the original prompt. (Bahasa: Anda adalah prompt engineer kreatif. Sempurnakan prompt pengguna agar sangat deskriptif dan artistik. **Anda HARUS merespon HANYA dengan prompt baru yang telah disempurnakan, dan respon tersebut HARUS dalam Bahasa Indonesia.** Pertahankan ide inti dari prompt asli.)";
                 const refinedPrompt = await callGeminiTextOrVisionApi(systemPrompt + "\n\n" + currentPrompt, null);
                 genPromptText.value = refinedPrompt;
                 showMessage('Prompt berhasil disempurnakan.', 'success');
@@ -705,7 +705,7 @@
             
             showLoading(true);
             try {
-                const prompt = "Analyze this image. Describe its style, content, colors, and composition in detail, as a descriptive prompt for an AI image generator. Respond ONLY with the prompt. (Bahasa: Analisa gambar ini. Deskripsikan gaya, konten, dan komposisinya sebagai prompt untuk AI generator. Jawab HANYA dengan prompt.)";
+                const prompt = "Analyze this image. Describe its style, content, colors, and composition in detail, as a descriptive prompt for an AI image generator. **You MUST respond ONLY with the prompt, and the response MUST be in Indonesian.** (Bahasa: Analisa gambar ini. Deskripsikan gaya, konten, dan komposisinya sebagai prompt untuk AI generator. **Anda HARUS merespon HANYA dengan prompt, dan respon tersebut HARUS dalam Bahasa Indonesia.**)";
                 const base64Data = genRefImageDataURL.split(',')[1];
                 const mimeType = genRefImageDataURL.match(/data:(image\/[a-z]+);/)[1] || 'image/png';
                 
@@ -1315,3 +1315,4 @@
     </script>
 </body>
 </html>
+
