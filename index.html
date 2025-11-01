@@ -6,8 +6,8 @@
     <title>Editor & Kreator AI v8 (Generator)</title>
     <!-- Memuat Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- MEMUAT IMGLY BACKGROUND REMOVAL -->
-    <script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal/dist/browser.js"></script>
+    <!-- MEMUAT IMGLY BACKGROUND REMOVAL (CDN diubah + Versi Eksplisit) -->
+    <script src="https://unpkg.com/@imgly/background-removal@11.3.1/dist/browser.js"></script>
     
     <style>
         /* Menggunakan font Inter */
@@ -1003,22 +1003,36 @@
             }
         }
         
+        // --- PERBAIKAN DI SINI ---
         async function processWithImgly() {
             if (typeof Imgly === 'undefined' || !Imgly.removeBackground) {
                 throw new Error("Metode Browser (Imgly) gagal dimuat. Periksa koneksi internet/ad-blocker Anda.");
             }
-            const blob = await Imgly.removeBackground(originalImageDataURL, { publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal/dist/assets/' });
-            const dataUrl = await blobToDataURL(blob);
-            updateCurrentImage(dataUrl);
-            showMessage('Background berhasil dihapus (Browser).', 'success');
-        }
+            try {
+                const blob = await Imgly.removeBackground(originalImageDataURL, {
+                    // PERUBAHAN KRITIS: Mengubah publicPath ke unpkg juga
+                    publicPath: 'https://unpkg.com/@imgly/background-removal@11.3.1/dist/assets/'
+                });
+                const dataUrl = await blobToDataURL(blob);
+                // BAGIAN HILANG YANG DIKEMBALIKAN:
+                updateCurrentImage(dataUrl);
+                showMessage('Background berhasil dihapus (Browser).', 'success');
+            } catch (error) {
+                // BAGIAN HILANG YANG DIKEMBALIKAN:
+                throw new Error(`Pemrosesan Imgly gagal: ${error.message}.`);
+            }
+        } // <-- PENUTUP FUNGSI YANG HILANG, SEKARANG ADA
 
         async function processWithGeminiBackground(imageDataUrl, mimeType) {
             let prompt = bgAiPrompt.value.trim() || "remove background";
             const base64Data = imageDataUrl.split(',')[1];
-            const generatedImageBase64 = await callImageApi(prompt, base64Data, mimeType);
-            updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
-            showMessage('Edit AI Background berhasil.', 'success');
+            try { // Ditambahkan try/catch untuk konsistensi
+                const generatedImageBase64 = await callImageApi(prompt, base64Data, mimeType);
+                updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
+                showMessage('Edit AI Background berhasil.', 'success');
+            } catch (error) {
+                throw error; // Biarkan handleBackgroundProcess yang menangani
+            }
         }
 
         async function handleAIExpand() {
@@ -1045,7 +1059,7 @@
                     tempCanvas.getContext('2d').drawImage(imgToExpand, drawX, drawY, originalW, originalH);
                     const imageDataUrlForAI = tempCanvas.toDataURL('image/png');
                     const base64Data = imageDataUrlForAI.split(',')[1];
-                    const prompt = `Expand the image to a ${aiAspectRatioSelect.value} aspect ratio. Fill the transparent areas...`;
+                    const prompt = `Expand the image to a ${aiAspectRatioSelect.value} aspect ratio. Fill the transparent areas around the central image with content that naturally blends and extends the existing scene, maintaining the original style and content in the center. Do not alter the central image.`;
                     const generatedImageBase64 = await callImageApi(prompt, base64Data, 'image/png');
                     updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
                     showMessage('Ekspansi AI berhasil.', 'success');
@@ -1068,6 +1082,7 @@
             maskCanvas.style.display = 'block';
             const img = new Image();
             img.onload = () => {
+                // Set canvas REAL size to match image
                 maskCanvas.width = img.naturalWidth;
                 maskCanvas.height = img.naturalHeight;
                 setupMaskContext();
@@ -1081,7 +1096,7 @@
             maskCtx.lineWidth = currentBrushSize;
             maskCtx.lineCap = 'round';
             maskCtx.lineJoin = 'round';
-            maskCtx.strokeStyle = 'rgba(255, 0, 255, 0.7)'; 
+            maskCtx.strokeStyle = 'rgba(255, 0, 255, 0.7)'; // Warna kuas
         }
 
         function updateBrushSize(e) {
@@ -1120,7 +1135,7 @@
 
         function stopDrawingMask() {
             if (isDrawingMask) {
-                maskCtx.beginPath();
+                maskCtx.beginPath(); // Hentikan path saat ini
                 isDrawingMask = false;
             }
         }
@@ -1140,43 +1155,62 @@
         }
 
         function setControlsDisabled(disabled) {
+            // Nonaktifkan semua fieldset lain di tab AI
             inpaintFieldset.parentElement.childNodes.forEach(node => {
                 if (node.nodeName === 'FIELDSET' && node.id !== 'inpaintFieldset') {
                     node.disabled = disabled;
+                    node.style.opacity = disabled ? 0.5 : 1;
                 }
             });
+            // Nonaktifkan tab Transform
             tabTransform.disabled = disabled;
+            tabTransform.style.opacity = disabled ? 0.5 : 1;
+            tabTransform.style.cursor = disabled ? 'not-allowed' : 'pointer';
         }
 
         async function applyInpainting() {
             const prompt = inpaintPrompt.value.trim();
             if (!prompt) return showMessage('Silakan masukkan prompt...', 'error');
+            
             showLoading(true);
             try {
                 const img = new Image();
                 img.onload = async () => {
+                    // 1. Gambar gambar asli ke kanvas utama
                     editCanvas.width = img.naturalWidth;
                     editCanvas.height = img.naturalHeight;
                     ctx.drawImage(img, 0, 0);
+                    
+                    // 2. Gunakan 'destination-out' untuk "melubangi" gambar
+                    // di tempat mask digambar
                     ctx.globalCompositeOperation = 'destination-out';
-                    ctx.drawImage(maskCanvas, 0, 0); 
+                    ctx.drawImage(maskCanvas, 0, 0); // Terapkan mask
+                    
+                    // 3. Reset composite operation
                     ctx.globalCompositeOperation = 'source-over';
+                    
+                    // 4. Dapatkan data URL dari gambar berlubang
                     const imageWithHolesDataUrl = editCanvas.toDataURL('image/png');
                     const base64Data = imageWithHolesDataUrl.split(',')[1];
-                    const finalPrompt = `${prompt}. Fill in the transparent areas...`;
+
+                    // 5. Kirim ke API
+                    const finalPrompt = `${prompt}. Fill in the transparent areas, blending perfectly with the surrounding image.`;
+                    
                     const generatedImageBase64 = await callImageApi(finalPrompt, base64Data, 'image/png');
+                    
                     updateCurrentImage(`data:image/png;base64,${generatedImageBase64}`);
                     showMessage('Inpainting AI berhasil.', 'success');
-                    cancelMasking();
+                    cancelMasking(); // Keluar dari mode masking
                 };
                 img.onerror = () => { throw new Error('Gagal memuat gambar untuk inpainting.'); };
                 if (currentImageDataURL.startsWith('blob:')) img.crossOrigin = "anonymous";
                 img.src = currentImageDataURL;
+                
             } catch (error) {
                 showMessage(`Inpainting Gagal: ${error.message}`, 'error');
             } finally {
                 showLoading(false);
-                if (isMasking) cancelMasking();
+                if (isMasking) cancelMasking(); // Pastikan selalu keluar dari mode masking
             }
         }
 
@@ -1194,12 +1228,14 @@
             if (!currentImageDataURL) return showMessage('Tidak ada gambar editan.', 'error');
             const format = formatSelect.value;
             let filename = (originalImageFile?.name.split('.').slice(0, -1).join('.') || 'edited-image') + '-edited';
+            
             const imgToDownload = new Image();
             imgToDownload.onload = async () => {
                 let dataURL;
                 editCanvas.width = imgToDownload.naturalWidth;
                 editCanvas.height = imgToDownload.naturalHeight;
                 ctx.drawImage(imgToDownload, 0, 0);
+
                 if (format === 'favicon-png') {
                     editCanvas.width = 32; editCanvas.height = 32;
                     ctx.drawImage(imgToDownload, 0, 0, 32, 32);
@@ -1215,10 +1251,11 @@
                 } else if (format === 'jpg') {
                     dataURL = editCanvas.toDataURL('image/jpeg', parseInt(jpgQuality.value) / 100);
                     filename += '.jpg';
-                } else {
+                } else { // png
                     dataURL = editCanvas.toDataURL('image/png');
                     filename += '.png';
                 }
+                
                 downloadLink.href = dataURL;
                 downloadLink.download = filename;
                 downloadLink.click();
@@ -1232,8 +1269,10 @@
         function updateCurrentImage(dataUrl) {
             if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
             if (dataUrl.startsWith('blob:')) currentBlobUrl = dataUrl;
+            
             currentImageDataURL = dataUrl;
             editedPreview.src = currentImageDataURL;
+            
             const newImg = new Image();
             newImg.onload = () => {
                 imgWidth.value = newImg.naturalWidth;
@@ -1255,27 +1294,41 @@
             const sizes = [16, 24, 32, 48, 64];
             const iconDirEntries = [];
             let imageDataOffset = 6 + (16 * sizes.length);
+            
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
+            
             const imageBlobs = [];
+            
             for (const size of sizes) {
                 canvas.width = size; canvas.height = size;
                 ctx.clearRect(0, 0, size, size);
                 ctx.drawImage(image, 0, 0, size, size);
+                
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const arrayBuffer = await blob.arrayBuffer();
                 const data = new Uint8Array(arrayBuffer);
                 imageBlobs.push(data);
+
                 const entry = new DataView(new ArrayBuffer(16));
-                entry.setUint8(0, size); entry.setUint8(1, size);
-                entry.setUint16(4, 1, true); entry.setUint16(6, 32, true);
-                entry.setUint32(8, data.length, true);
-                entry.setUint32(12, imageDataOffset, true);
+                entry.setUint8(0, size); // width
+                entry.setUint8(1, size); // height
+                entry.setUint8(2, 0); // color palette
+                entry.setUint8(3, 0); // reserved
+                entry.setUint16(4, 1, true); // color planes
+                entry.setUint16(6, 32, true); // bits per pixel
+                entry.setUint32(8, data.length, true); // size of data
+                entry.setUint32(12, imageDataOffset, true); // offset of data
+                
                 iconDirEntries.push(new Uint8Array(entry.buffer));
                 imageDataOffset += data.length;
             }
+            
             const header = new DataView(new ArrayBuffer(6));
-            header.setUint16(2, 1, true); header.setUint16(4, sizes.length, true);
+            header.setUint16(0, 0, true); // reserved
+            header.setUint16(2, 1, true); // type 1 = ICO
+            header.setUint16(4, sizes.length, true); // number of images
+            
             const icoBlob = new Blob([new Uint8Array(header.buffer), ...iconDirEntries, ...imageBlobs], { type: 'image/vnd.microsoft.icon' });
             return await blobToDataURL(icoBlob);
         }
@@ -1284,12 +1337,14 @@
             try {
                 const response = await fetch(url, options);
                 if (!response.ok && response.status === 429 && retries > 0) {
+                    // console.warn(`Retrying request (429)... ${retries} retries left.`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return fetchWithBackoff(url, options, retries - 1, delay * 2);
                 }
                 return response;
             } catch (error) {
                 if (retries > 0) {
+                    // console.warn(`Retrying request (fetch error)... ${retries} retries left.`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return fetchWithBackoff(url, options, retries - 1, delay * 2);
                 }
